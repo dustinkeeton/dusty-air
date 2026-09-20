@@ -1,0 +1,500 @@
+<!doctype html>
+<!--
+  ============================================================================
+  REQUIRES MQTT -- NON-FUNCTIONAL AS OF 2026-09-20
+  ============================================================================
+  This dashboard is a development-only tool. It is a direct MQTT client: it
+  connects to the broker over WebSocket (default 192.168.1.10:1884) and
+  subscribes to `dusty-air/sensor/+/state` and `dusty-air/status`. It never
+  talks to Home Assistant.
+
+  The firmware moved from MQTT to the native ESPHome API on 2026-09-20, so the
+  device no longer publishes to the broker and this page will connect to the
+  broker but never receive data. The native API is a binary protocol a browser
+  cannot consume, so this page cannot simply be repointed at the device.
+
+  Kept for reference only. To use it again you must re-enable the `mqtt:` block
+  in firmware/dusty-air.yaml (it is commented out there, with instructions).
+  Otherwise read the sensors from the Home Assistant dashboard.
+  ============================================================================
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dusty Air</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --series-4: #eda100;
+    --good: #0ca30c;
+    --warning: #fab219;
+    --serious: #ec835a;
+    --critical: #d03b3b;
+    --good-text: #006300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface: #1a1a19;
+      --ink: #ffffff;
+      --ink-2: #c3c2b7;
+      --muted: #898781;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --border: rgba(255,255,255,0.10);
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #199e70;
+      --series-4: #c98500;
+      --good-text: #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+    --muted: #898781; --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+    --good-text: #0ca30c;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 16px 24px; border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 18px; font-weight: 600; margin: 0; }
+  .conn { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 13px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--good); }
+  .dot.off { background: var(--critical); }
+  .spacer { flex: 1; }
+  button, select, input {
+    font: inherit; color: var(--ink); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--axis); }
+  main { padding: 20px 24px 40px; max-width: 1200px; margin: 0 auto; }
+
+  .hero {
+    display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; gap: 16px;
+    margin-bottom: 16px;
+  }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px; min-width: 0;
+  }
+  .label { color: var(--ink-2); font-size: 13px; }
+  .hero-value { font-size: 64px; font-weight: 600; line-height: 1.05; margin: 4px 0 0; letter-spacing: -0.01em; }
+  .hero-unit { font-size: 16px; font-weight: 400; color: var(--ink-2); margin-left: 6px; }
+  .aqi { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; font-weight: 500; }
+  .aqi .swatch { width: 12px; height: 12px; border-radius: 3px; }
+  .aqi small { color: var(--ink-2); font-weight: 400; }
+
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile .value { font-size: 28px; font-weight: 600; line-height: 1.1; margin-top: 2px; }
+  .tile .value .unit { font-size: 13px; font-weight: 400; color: var(--ink-2); margin-left: 3px; }
+  .tile .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .tile svg { display: block; width: 100%; height: 28px; margin-top: 8px; }
+
+  .charts { display: grid; grid-template-columns: 1fr; gap: 16px; }
+  @media (min-width: 900px) { .charts .half { grid-column: span 1; } .charts { grid-template-columns: 1fr 1fr; } .charts .full { grid-column: 1 / -1; } }
+  .chart-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+  .chart-head h2 { font-size: 14px; font-weight: 600; margin: 0; }
+  .legend { display: flex; gap: 14px; color: var(--ink-2); font-size: 12px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 14px; height: 2px; border-radius: 1px; display: inline-block; }
+  .plot { position: relative; width: 100%; height: 220px; }
+  .plot svg { width: 100%; height: 100%; display: block; overflow: visible; }
+  .plot .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
+  .tip {
+    position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 9px; font-size: 12px; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    transform: translate(-50%, -100%); display: none; z-index: 2;
+  }
+  .tip b { font-weight: 600; }
+  .tip .row { display: flex; align-items: center; gap: 6px; }
+  .tip i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .axis-text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .grid-line { stroke: var(--grid); stroke-width: 1; }
+  .axis-line { stroke: var(--axis); stroke-width: 1; }
+  .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .area { opacity: 0.10; }
+  .crosshair { stroke: var(--axis); stroke-width: 1; display: none; }
+  .marker { stroke: var(--surface); stroke-width: 2; }
+
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 13px; }
+  th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--grid); }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--ink-2); font-weight: 500; }
+  .table-wrap { overflow-x: auto; max-height: 360px; overflow-y: auto; }
+
+  dialog {
+    background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px 22px; width: min(420px, 92vw);
+  }
+  dialog::backdrop { background: rgba(0,0,0,0.35); }
+  dialog h2 { margin: 0 0 4px; font-size: 16px; }
+  dialog p { margin: 0 0 14px; color: var(--ink-2); font-size: 13px; }
+  dialog label { display: block; margin: 10px 0 4px; font-size: 13px; color: var(--ink-2); }
+  dialog input { width: 100%; }
+  dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  .err { color: var(--critical); font-size: 13px; margin-top: 8px; min-height: 1.2em; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Dusty Air</h1>
+  <div class="conn"><span class="dot" id="connDot"></span><span id="connText">Not connected</span></div>
+  <span class="spacer"></span>
+  <label class="label">Window
+    <select id="windowSel">
+      <option value="900">15 min</option>
+      <option value="3600" selected>1 hour</option>
+      <option value="21600">6 hours</option>
+      <option value="86400">24 hours</option>
+      <option value="0">All</option>
+    </select>
+  </label>
+  <button id="tableBtn">Table</button>
+  <button id="settingsBtn">Connection</button>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="card">
+      <div class="label">PM2.5 now</div>
+      <div class="hero-value"><span id="heroVal">–</span><span class="hero-unit">µg/m³</span></div>
+      <div class="aqi"><span class="swatch" id="aqiSwatch"></span><span id="aqiText">Waiting for a reading</span></div>
+      <div class="sub label" id="heroSub" style="margin-top:8px"></div>
+    </div>
+    <div class="card">
+      <div class="chart-head">
+        <h2>Particulates</h2>
+        <div class="legend">
+          <span><i style="background:var(--series-1)"></i>PM2.5</span>
+          <span><i style="background:var(--series-2)"></i>PM10</span>
+        </div>
+      </div>
+      <div class="plot" id="pmPlot"></div>
+    </div>
+  </section>
+
+  <section class="kpis" id="kpis"></section>
+
+  <section class="charts">
+    <div class="card half">
+      <div class="chart-head"><h2>Temperature</h2><div class="legend"><span><i style="background:var(--series-3)"></i>°C</span></div></div>
+      <div class="plot" id="tempPlot"></div>
+    </div>
+    <div class="card half">
+      <div class="chart-head"><h2>Humidity</h2><div class="legend"><span><i style="background:var(--series-4)"></i>% RH</span></div></div>
+      <div class="plot" id="humPlot"></div>
+    </div>
+    <div class="card full hidden" id="tableCard">
+      <div class="chart-head"><h2>Readings</h2><span class="label" id="tableCount"></span></div>
+      <div class="table-wrap"><table id="table"><thead><tr>
+        <th>Time</th><th>PM2.5</th><th>PM10</th><th>Temp °C</th><th>Humidity %</th><th>Wi-Fi dBm</th>
+      </tr></thead><tbody></tbody></table></div>
+    </div>
+  </section>
+</main>
+
+<dialog id="settings">
+  <h2>Broker connection</h2>
+  <p>The page subscribes to the Mosquitto add-on over WebSocket. Values are kept in this browser only.</p>
+  <label>Host</label><input id="fHost" placeholder="192.168.1.10">
+  <label>WebSocket port</label><input id="fPort" placeholder="1884">
+  <label>Username</label><input id="fUser" placeholder="dusty-air">
+  <label>Password</label><input id="fPass" type="password">
+  <label>Topic prefix</label><input id="fPrefix" placeholder="dusty-air">
+  <div class="err" id="fErr"></div>
+  <div class="actions">
+    <button id="fClear" type="button">Forget</button>
+    <button id="fSave" type="button">Connect</button>
+  </div>
+</dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.10.1/mqtt.min.js" integrity="sha384-u4uqeACkFcoKl57rBQJHVGDd1pqhW4w8X3WjTu1ZksPdxoLqdt34jpoNkJisE25W" crossorigin="anonymous"></script>
+<script>
+(() => {
+  // ---------- config ----------
+  const LS_CFG = 'dustyair.cfg';
+  const LS_HIST = 'dustyair.hist';
+  const MAX_POINTS = 4000;
+  const DEFAULTS = { host: '192.168.1.10', port: '1884', user: 'dusty-air', pass: '', prefix: 'dusty-air' };
+
+  const METRICS = {
+    pm2_5:       { label: 'PM2.5',       unit: 'µg/m³', dec: 1, series: 'series-1' },
+    pm10:        { label: 'PM10',        unit: 'µg/m³', dec: 1, series: 'series-2' },
+    temperature: { label: 'Temperature', unit: '°C',    dec: 1, series: 'series-3' },
+    humidity:    { label: 'Humidity',    unit: '%',     dec: 0, series: 'series-4' },
+    wifi_signal: { label: 'Wi-Fi signal',unit: 'dBm',   dec: 0, series: 'series-1' },
+    uptime:      { label: 'Uptime',      unit: '',      dec: 0, series: 'series-1' },
+  };
+
+  // US EPA PM2.5 24h breakpoints (2024 revision)
+  const PM25_BANDS = [
+    [9.0,   'Good',                     'good'],
+    [35.4,  'Moderate',                 'warning'],
+    [55.4,  'Unhealthy for sensitive groups', 'serious'],
+    [125.4, 'Unhealthy',                'critical'],
+    [225.4, 'Very unhealthy',           'critical'],
+    [1e9,   'Hazardous',                'critical'],
+  ];
+  const PM10_BANDS = [[54,'Good','good'],[154,'Moderate','warning'],[254,'Unhealthy for sensitive groups','serious'],[354,'Unhealthy','critical'],[1e9,'Hazardous','critical']];
+  const band = (v, bands) => bands.find(b => v <= b[0]) || bands[bands.length - 1];
+
+  // ---------- state ----------
+  let cfg = loadJSON(LS_CFG, null);
+  let hist = loadJSON(LS_HIST, {});      // metric -> [[t, v], ...]
+  let latest = {};                        // metric -> {t, v}
+  let deviceOnline = null;
+  let client = null;
+  let windowSec = 3600;
+
+  function loadJSON(k, d) { try { const s = localStorage.getItem(k); return s ? JSON.parse(s) : d; } catch { return d; } }
+  function saveJSON(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+
+  // seed latest from history
+  for (const m in hist) { const a = hist[m]; if (a.length) latest[m] = { t: a[a.length-1][0], v: a[a.length-1][1] }; }
+
+  // ---------- helpers ----------
+  const $ = id => document.getElementById(id);
+  const css = v => getComputedStyle(document.documentElement).getPropertyValue('--' + v).trim();
+  const fmt = (v, dec) => (v == null || isNaN(v)) ? '–' : Number(v).toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec });
+  const fmtTime = t => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const fmtTimeS = t => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+  const ago = t => { const s = Math.round((Date.now() - t) / 1000); if (s < 60) return `${s}s ago`; if (s < 3600) return `${Math.floor(s/60)}m ago`; return `${Math.floor(s/3600)}h ${Math.floor(s%3600/60)}m ago`; };
+  const fmtUptime = s => { s = Math.round(s); const d = Math.floor(s/86400), h = Math.floor(s%86400/3600), m = Math.floor(s%3600/60); return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m ${s%60}s`; };
+  const inWindow = arr => windowSec ? arr.filter(p => p[0] >= Date.now() - windowSec * 1000) : arr;
+
+  // ---------- MQTT ----------
+  function setConn(state, text) {
+    $('connDot').className = 'dot ' + state;
+    $('connText').textContent = text;
+  }
+
+  function connect() {
+    if (client) { try { client.end(true); } catch {} client = null; }
+    if (!cfg || !cfg.pass) { openSettings(); return; }
+    const url = `ws://${cfg.host}:${cfg.port}`;
+    setConn('', `Connecting to ${cfg.host}…`);
+    client = mqtt.connect(url, {
+      username: cfg.user, password: cfg.pass, clientId: 'dusty-dash-' + Math.random().toString(16).slice(2, 8),
+      reconnectPeriod: 4000, connectTimeout: 8000, clean: true,
+    });
+    client.on('connect', () => {
+      setConn('on', `Broker connected · ${cfg.host}`);
+      client.subscribe(`${cfg.prefix}/sensor/+/state`);
+      client.subscribe(`${cfg.prefix}/status`);
+    });
+    client.on('reconnect', () => setConn('', 'Reconnecting…'));
+    client.on('close', () => setConn('off', 'Disconnected'));
+    client.on('error', e => { setConn('off', 'Error: ' + (e && e.message || e)); $('fErr').textContent = String(e && e.message || e); });
+    client.on('message', (topic, payload) => {
+      const text = payload.toString();
+      if (topic === `${cfg.prefix}/status`) { deviceOnline = text === 'online'; render(); return; }
+      const m = topic.split('/')[2];
+      const v = parseFloat(text);
+      if (!(m in METRICS) || isNaN(v)) return;
+      const t = Date.now();
+      // Retained messages replay the last value on connect; skip if identical to what we already have.
+      if (latest[m] && latest[m].v === v && t - latest[m].t < 2000) return;
+      latest[m] = { t, v };
+      (hist[m] ||= []).push([t, v]);
+      if (hist[m].length > MAX_POINTS) hist[m].splice(0, hist[m].length - MAX_POINTS);
+      saveJSON(LS_HIST, hist);
+      render();
+    });
+  }
+
+  // ---------- settings dialog ----------
+  function openSettings() {
+    const c = cfg || DEFAULTS;
+    $('fHost').value = c.host; $('fPort').value = c.port; $('fUser').value = c.user; $('fPass').value = c.pass || ''; $('fPrefix').value = c.prefix;
+    $('fErr').textContent = '';
+    $('settings').showModal();
+  }
+  $('settingsBtn').onclick = openSettings;
+  $('fSave').onclick = () => {
+    cfg = { host: $('fHost').value.trim() || DEFAULTS.host, port: $('fPort').value.trim() || DEFAULTS.port,
+            user: $('fUser').value.trim() || DEFAULTS.user, pass: $('fPass').value, prefix: $('fPrefix').value.trim() || DEFAULTS.prefix };
+    if (!cfg.pass) { $('fErr').textContent = 'Password is required.'; return; }
+    saveJSON(LS_CFG, cfg);
+    $('settings').close();
+    connect();
+  };
+  $('fClear').onclick = () => { try { localStorage.removeItem(LS_CFG); localStorage.removeItem(LS_HIST); } catch {} cfg = null; hist = {}; latest = {}; $('settings').close(); render(); openSettings(); };
+  $('windowSel').onchange = e => { windowSec = +e.target.value; render(); };
+  $('tableBtn').onclick = () => { $('tableCard').classList.toggle('hidden'); renderTable(); };
+
+  // ---------- rendering ----------
+  function render() {
+    renderHero();
+    renderKpis();
+    drawLine($('pmPlot'), [
+      { key: 'pm2_5', color: css('series-1'), label: 'PM2.5' },
+      { key: 'pm10',  color: css('series-2'), label: 'PM10' },
+    ], { unit: 'µg/m³', dec: 1, min0: true });
+    drawLine($('tempPlot'), [{ key: 'temperature', color: css('series-3'), label: 'Temperature' }], { unit: '°C', dec: 1 });
+    drawLine($('humPlot'),  [{ key: 'humidity',    color: css('series-4'), label: 'Humidity' }],    { unit: '%', dec: 0, min0: true, max: 100 });
+    if (!$('tableCard').classList.contains('hidden')) renderTable();
+  }
+
+  function renderHero() {
+    const p = latest.pm2_5;
+    if (!p) { $('heroVal').textContent = '–'; $('aqiText').textContent = 'Waiting for a reading'; $('aqiSwatch').style.background = css('muted'); $('heroSub').textContent = ''; return; }
+    const b = band(p.v, PM25_BANDS);
+    $('heroVal').textContent = fmt(p.v, 1);
+    $('aqiSwatch').style.background = css(b[2]);
+    $('aqiText').innerHTML = `${b[1]} <small>· EPA 24 h scale</small>`;
+    $('heroSub').textContent = `Updated ${ago(p.t)} · ${deviceOnline === false ? 'device offline' : deviceOnline ? 'device online' : ''}`;
+  }
+
+  function renderKpis() {
+    const items = [
+      { key: 'pm10', extra: v => band(v, PM10_BANDS)[1] },
+      { key: 'temperature' },
+      { key: 'humidity', extra: v => v > 70 ? 'High RH inflates PM readings' : '' },
+      { key: 'wifi_signal', extra: v => v > -60 ? 'Strong' : v > -70 ? 'Good' : v > -80 ? 'Fair' : 'Weak' },
+      { key: 'uptime', format: v => fmtUptime(v) },
+    ];
+    const host = $('kpis');
+    host.innerHTML = items.map(it => {
+      const m = METRICS[it.key], l = latest[it.key];
+      const val = l ? (it.format ? it.format(l.v) : fmt(l.v, m.dec)) : '–';
+      const unit = (l && !it.format && m.unit) ? `<span class="unit">${m.unit}</span>` : '';
+      const sub = l ? [ago(l.t), it.extra ? it.extra(l.v) : ''].filter(Boolean).join(' · ') : 'no data yet';
+      return `<div class="card tile" data-key="${it.key}">
+        <div class="label">${m.label}</div>
+        <div class="value">${val}${unit}</div>
+        <div class="sub">${sub}</div>
+        ${it.key === 'uptime' ? '' : sparkline(it.key)}
+      </div>`;
+    }).join('');
+  }
+
+  function sparkline(key) {
+    const pts = inWindow(hist[key] || []).slice(-60);
+    if (pts.length < 2) return '<svg viewBox="0 0 100 28" preserveAspectRatio="none"></svg>';
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const X = t => x1 === x0 ? 50 : (t - x0) / (x1 - x0) * 100;
+    const Y = v => y1 === y0 ? 14 : 24 - (v - y0) / (y1 - y0) * 20;
+    const d = pts.map((p, i) => `${i ? 'L' : 'M'}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join('');
+    const last = pts[pts.length - 1];
+    return `<svg viewBox="0 0 100 28" preserveAspectRatio="none">
+      <path d="${d}" fill="none" stroke="${css('muted')}" stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${X(last[0]).toFixed(1)}" cy="${Y(last[1]).toFixed(1)}" r="2.5" fill="${css(METRICS[key].series)}" vector-effect="non-scaling-stroke"/>
+    </svg>`;
+  }
+
+  // Generic single-axis line chart with crosshair tooltip.
+  function drawLine(host, series, opt) {
+    const W = host.clientWidth || 600, H = host.clientHeight || 220;
+    const pad = { l: 44, r: 12, t: 12, b: 26 };
+    const data = series.map(s => ({ ...s, pts: inWindow(hist[s.key] || []) }));
+    const all = data.flatMap(s => s.pts);
+    if (all.length < 2) { host.innerHTML = `<div class="empty">Collecting readings…</div>`; return; }
+
+    const xs = all.map(p => p[0]), ys = all.map(p => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(Math.max(...xs), x0 + 60000);
+    let y0 = opt.min0 ? 0 : Math.min(...ys), y1 = opt.max != null ? opt.max : Math.max(...ys);
+    if (!opt.min0) { const r = (y1 - y0) || 1; y0 -= r * 0.15; y1 += r * 0.15; }
+    else if (y1 === 0) y1 = 1; else y1 *= 1.1;
+    const X = t => pad.l + (t - x0) / (x1 - x0) * (W - pad.l - pad.r);
+    const Y = v => pad.t + (1 - (v - y0) / (y1 - y0)) * (H - pad.t - pad.b);
+
+    const ticks = niceTicks(y0, y1, 4);
+    const tticks = timeTicks(x0, x1, Math.max(2, Math.floor((W - pad.l) / 110)));
+    let svg = `<svg viewBox="0 0 ${W} ${H}">`;
+    for (const t of ticks) svg += `<line class="grid-line" x1="${pad.l}" x2="${W - pad.r}" y1="${Y(t)}" y2="${Y(t)}"/><text class="axis-text" x="${pad.l - 8}" y="${Y(t) + 4}" text-anchor="end">${fmt(t, ticks.dec)}</text>`;
+    svg += `<line class="axis-line" x1="${pad.l}" x2="${W - pad.r}" y1="${H - pad.b}" y2="${H - pad.b}"/>`;
+    for (const t of tticks) svg += `<text class="axis-text" x="${X(t)}" y="${H - pad.b + 16}" text-anchor="middle">${fmtTime(t)}</text>`;
+    for (const s of data) {
+      if (s.pts.length < 1) continue;
+      const path = s.pts.map((p, i) => `${i ? 'L' : 'M'}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join('');
+      if (series.length === 1) svg += `<path class="area" d="${path}L${X(s.pts[s.pts.length-1][0]).toFixed(1)},${Y(y0)}L${X(s.pts[0][0]).toFixed(1)},${Y(y0)}Z" fill="${s.color}"/>`;
+      svg += `<path class="line" d="${path}" stroke="${s.color}"/>`;
+      const last = s.pts[s.pts.length - 1];
+      svg += `<circle class="marker" cx="${X(last[0])}" cy="${Y(last[1])}" r="4" fill="${s.color}"/>`;
+      if (series.length > 1) svg += `<text class="axis-text" x="${X(last[0]) + 8}" y="${Y(last[1]) + 4}" style="fill:${s.color};font-weight:600">${s.label}</text>`;
+    }
+    svg += `<line class="crosshair" x1="0" x2="0" y1="${pad.t}" y2="${H - pad.b}"/>`;
+    svg += `<rect x="${pad.l}" y="${pad.t}" width="${W - pad.l - pad.r}" height="${H - pad.t - pad.b}" fill="transparent" class="hit"/>`;
+    svg += `</svg><div class="tip"></div>`;
+    host.innerHTML = svg;
+
+    const el = host.querySelector('svg'), cross = host.querySelector('.crosshair'), tip = host.querySelector('.tip');
+    const move = ev => {
+      const r = el.getBoundingClientRect();
+      const px = (ev.clientX - r.left) * (W / r.width);
+      const t = x0 + (px - pad.l) / (W - pad.l - pad.r) * (x1 - x0);
+      let rows = [], snapX = px, snapT = t;
+      for (const s of data) {
+        if (!s.pts.length) continue;
+        let best = s.pts[0]; for (const p of s.pts) if (Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p;
+        rows.push(`<div class="row"><i style="background:${s.color}"></i>${s.label} <b>${fmt(best[1], opt.dec)} ${opt.unit}</b></div>`);
+        snapX = X(best[0]); snapT = best[0];
+      }
+      cross.setAttribute('x1', snapX); cross.setAttribute('x2', snapX); cross.style.display = 'block';
+      tip.innerHTML = `<div>${fmtTimeS(snapT)}</div>${rows.join('')}`;
+      tip.style.left = (snapX * r.width / W) + 'px'; tip.style.top = (pad.t * r.height / H - 6) + 'px'; tip.style.display = 'block';
+    };
+    el.addEventListener('mousemove', move);
+    el.addEventListener('mouseleave', () => { cross.style.display = 'none'; tip.style.display = 'none'; });
+  }
+
+  function niceTicks(lo, hi, n) {
+    const span = hi - lo || 1, raw = span / n, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw) || mag * 10;
+    const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(6));
+    out.dec = step < 1 ? Math.min(2, Math.ceil(-Math.log10(step))) : 0; return out;
+  }
+  function timeTicks(t0, t1, n) {
+    const span = t1 - t0, steps = [60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400].map(s => s * 1000);
+    const step = steps.find(s => span / s <= n) || steps[steps.length - 1];
+    const out = []; for (let t = Math.ceil(t0 / step) * step; t <= t1; t += step) out.push(t); return out;
+  }
+
+  function renderTable() {
+    const keys = ['pm2_5', 'pm10', 'temperature', 'humidity', 'wifi_signal'];
+    const rows = new Map(); // bucket to the second
+    for (const k of keys) for (const [t, v] of inWindow(hist[k] || [])) { const b = Math.round(t / 1000) * 1000; (rows.get(b) || rows.set(b, {}).get(b))[k] = v; }
+    const sorted = [...rows.entries()].sort((a, b) => b[0] - a[0]).slice(0, 500);
+    $('table').querySelector('tbody').innerHTML = sorted.map(([t, r]) =>
+      `<tr><td>${new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' })}</td>` +
+      keys.map(k => `<td>${r[k] != null ? fmt(r[k], METRICS[k].dec) : ''}</td>`).join('') + '</tr>').join('');
+    $('tableCount').textContent = `${sorted.length} rows in window`;
+  }
+
+  // ---------- boot ----------
+  window.addEventListener('resize', render);
+  setInterval(renderHero, 15000);
+  setInterval(renderKpis, 15000);
+  render();
+  connect();
+})();
+</script>
+</body>
+</html>

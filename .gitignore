@@ -1,0 +1,36 @@
+# CLAUDE
+.claude/
+CLAUDE.md
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Build outputs (Arduino / PlatformIO / ESP-IDF)
+build/
+.pio/
+.pioenvs/
+.piolibdeps/
+sdkconfig.old
+*.bin
+*.elf
+*.map
+
+# Secrets (Wi-Fi credentials etc.)
+secrets.h
+*.secrets.*
+.env
+
+# ESPHome
+firmware/secrets.yaml
+firmware/.esphome/
+
+# Archify QA artifacts (embed absolute local paths)
+*.visual-check.*
+
+# Docs/
+docs/PLAN.md
+
+# Models
+models/

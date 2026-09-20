@@ -1,0 +1,100 @@
+# dusty-air: SDS011 particulate sensor + DHT11 temp/humidity on an ESP32-WROOM-32D.
+# Flash:   esphome run firmware/dusty-air.yaml      (USB first time, OTA afterwards)
+# Logs:    esphome logs firmware/dusty-air.yaml
+# Secrets: firmware/secrets.yaml (git-ignored)
+
+esphome:
+  name: dusty-air
+  friendly_name: Dusty Air
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Dusty Air Fallback"
+    password: !secret fallback_password
+
+captive_portal:
+
+logger:
+  level: INFO
+
+# Native ESPHome API is the transport to Home Assistant. HA's ESPHome integration
+# discovers the device over mDNS and holds an encrypted push connection on port 6053.
+# Chosen over MQTT so that `esphome logs` keeps working when the broker is unhappy --
+# under MQTT the log stream rode the broker, so bad credentials cost you remote debugging.
+api:
+  encryption:
+    key: !secret api_key
+
+# MQTT retired 2026-09-20. It was the original transport and is what dashboard/index.html
+# (a development-only tool, now unused) consumed over WebSocket port 1884. Re-enabling it
+# means also clearing the retained homeassistant/.../dusty-air/... discovery topics first,
+# or HA will hold two copies of every entity. Keep reboot_timeout at 0s if it ever comes
+# back alongside api:, so a broker outage cannot power-cycle an otherwise healthy device.
+# mqtt:
+#   broker: !secret mqtt_broker      # LAN IP of the HAOS box; the ESP32 can't resolve the tailnet name
+#   username: !secret mqtt_username
+#   password: !secret mqtt_password
+#   topic_prefix: dusty-air
+#   discovery: true                  # Home Assistant creates the device and entities automatically
+#   reboot_timeout: 0s
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+# SDS011 talks 9600 8N1 on UART2. Sensor TXD -> GPIO16, sensor RXD -> GPIO17.
+uart:
+  id: sds_uart
+  rx_pin: GPIO16
+  tx_pin: GPIO17
+  baud_rate: 9600
+
+sensor:
+  - platform: sds011
+    uart_id: sds_uart
+    # Fan runs 30 s then sleeps until the next reading. Keeps the rated 8000 h fan life
+    # stretching to years instead of months.
+    update_interval: 5min
+    pm_2_5:
+      name: "PM2.5"
+      filters:
+        - sliding_window_moving_average:
+            window_size: 3
+            send_every: 1
+    pm_10_0:
+      name: "PM10"
+      filters:
+        - sliding_window_moving_average:
+            window_size: 3
+            send_every: 1
+
+  # DHT11 on GPIO4, powered from 3.3 V. Bare 4-pin sensors need a 10k pull-up
+  # between DATA and VCC; 3-pin breakout modules already have one.
+  - platform: dht
+    pin: GPIO4
+    model: DHT11
+    update_interval: 60s
+    temperature:
+      name: "Temperature"
+    humidity:
+      name: "Humidity"
+
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    update_interval: 60s
+    entity_category: diagnostic
+
+  - platform: uptime
+    name: "Uptime"
+    entity_category: diagnostic
+
+binary_sensor:
+  - platform: status
+    name: "Status"

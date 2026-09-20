@@ -1,0 +1,338 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Dusty Air — system schematic",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1120,
+      560
+    ],
+    "views": [
+      {
+        "id": "wiring",
+        "label": "Hardware wiring",
+        "focus": [
+          "usb",
+          "sds011",
+          "dht11",
+          "esp32"
+        ],
+        "note": "Pin-level connections inside the enclosure. The SDS011 runs on 5 V but talks 3.3 V UART; the DHT11 runs on 3V3."
+      },
+      {
+        "id": "telemetry",
+        "label": "Telemetry path",
+        "focus": [
+          "esp32",
+          "wifi",
+          "broker",
+          "ha",
+          "recorder"
+        ],
+        "note": "ESPHome publishes retained state topics over MQTT; Home Assistant creates entities from the discovery messages."
+      },
+      {
+        "id": "tooling",
+        "label": "Mac tooling",
+        "focus": [
+          "mac",
+          "dashboard",
+          "broker",
+          "esp32"
+        ],
+        "note": "The Mac flashes firmware over the air and serves the live dashboard, which subscribes to the broker directly."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "usb",
+      "type": "external",
+      "label": "USB power",
+      "sublabel": "5 V adapter",
+      "pos": [
+        30,
+        272
+      ],
+      "size": [
+        120,
+        60
+      ]
+    },
+    {
+      "id": "sds011",
+      "type": "external",
+      "label": "SDS011",
+      "sublabel": "PM2.5 / PM10 laser",
+      "tag": "5 V · UART 9600",
+      "pos": [
+        200,
+        106
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "dht11",
+      "type": "external",
+      "label": "DHT11 module",
+      "sublabel": "temperature / humidity",
+      "tag": "3V3 · 1-wire",
+      "pos": [
+        200,
+        436
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "esp32",
+      "type": "backend",
+      "label": "ESP32-WROOM-32D",
+      "sublabel": "ESPHome · dusty-air.local",
+      "tag": "192.168.1.20",
+      "pos": [
+        440,
+        272
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "wifi",
+      "type": "cloud",
+      "label": "Wi-Fi 2.4 GHz",
+      "sublabel": "SSID your-wifi-ssid",
+      "pos": [
+        700,
+        272
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "broker",
+      "type": "messagebus",
+      "label": "Mosquitto",
+      "sublabel": "MQTT :1883 · WS :1884",
+      "pos": [
+        930,
+        272
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "ha",
+      "type": "backend",
+      "label": "Home Assistant",
+      "sublabel": "MQTT discovery",
+      "pos": [
+        930,
+        156
+      ],
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "recorder",
+      "type": "database",
+      "label": "Recorder",
+      "sublabel": "history and graphs",
+      "pos": [
+        930,
+        40
+      ],
+      "size": [
+        160,
+        60
+      ]
+    },
+    {
+      "id": "mac",
+      "type": "frontend",
+      "label": "Mac",
+      "sublabel": "esphome CLI · :8811",
+      "pos": [
+        700,
+        436
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "dashboard",
+      "type": "frontend",
+      "label": "Live dashboard",
+      "sublabel": "dashboard/index.html",
+      "pos": [
+        930,
+        436
+      ],
+      "size": [
+        160,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "3D-printed enclosure",
+      "wraps": [
+        "sds011",
+        "dht11",
+        "esp32"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "HAOS box · 192.168.1.10",
+      "wraps": [
+        "broker",
+        "ha",
+        "recorder"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "usb-power",
+      "from": "usb",
+      "to": "esp32",
+      "label": "micro-USB 5 V",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "sds-power",
+      "from": "esp32",
+      "to": "sds011",
+      "label": "VIN 5 V · GND · GPIO17 → RXD",
+      "fromSide": "left",
+      "toSide": "right",
+      "labelDy": 55
+    },
+    {
+      "id": "sds-data",
+      "from": "sds011",
+      "to": "esp32",
+      "label": "TXD → GPIO16 (UART2 RX)",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDx": 90
+    },
+    {
+      "id": "dht-power",
+      "from": "esp32",
+      "to": "dht11",
+      "label": "3V3 · GND",
+      "fromSide": "left",
+      "toSide": "right",
+      "labelDy": 60
+    },
+    {
+      "id": "dht-data",
+      "from": "dht11",
+      "to": "esp32",
+      "label": "DATA → GPIO4",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDx": 90
+    },
+    {
+      "id": "esp-wifi",
+      "from": "esp32",
+      "to": "wifi",
+      "label": "WPA2 · −43 dBm",
+      "variant": "emphasis",
+      "labelDy": -26
+    },
+    {
+      "id": "wifi-broker",
+      "from": "wifi",
+      "to": "broker",
+      "label": "MQTT :1883 · dusty-air/sensor/+/state",
+      "variant": "emphasis",
+      "labelDy": -26
+    },
+    {
+      "id": "broker-ha",
+      "from": "broker",
+      "to": "ha",
+      "label": "discovery + retained states",
+      "variant": "emphasis",
+      "labelDy": -22
+    },
+    {
+      "id": "ha-recorder",
+      "from": "ha",
+      "to": "recorder",
+      "label": "state history"
+    },
+    {
+      "id": "broker-dashboard",
+      "from": "broker",
+      "to": "dashboard",
+      "label": "MQTT over WebSocket :1884",
+      "labelDy": 24
+    },
+    {
+      "id": "mac-dashboard",
+      "from": "mac",
+      "to": "dashboard",
+      "label": "serves page :8811",
+      "labelDy": -26
+    },
+    {
+      "id": "mac-ota",
+      "from": "mac",
+      "to": "esp32",
+      "label": "esphome OTA :3232",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Wiring",
+      "items": [
+        "SDS011: 5V→VIN, GND→GND, TXD→GPIO16, RXD→GPIO17 (UART2, 9600 8N1)",
+        "DHT11: VCC→3V3, DATA→GPIO4, GND→GND; pull-up is on the module"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Firmware",
+      "items": [
+        "ESPHome config in firmware/dusty-air.yaml, secrets git-ignored",
+        "SDS011 duty-cycled every 5 min to stretch fan life; DHT11 read every 60 s"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Data path",
+      "items": [
+        "Retained MQTT state topics under dusty-air/sensor/<name>/state",
+        "MQTT discovery creates the Dusty Air device in Home Assistant"
+      ]
+    }
+  ]
+}
